@@ -2,7 +2,7 @@
 import pymongo
 import random
 
-MONGO_URI = 'mongodb+srv://Susruth:susruth%402005@cluster0.vktazvq.mongodb.net/?retryWrites=true&w=majority'
+MONGO_URI = 'your_mongodb_token_url'
 db = pymongo.MongoClient(MONGO_URI)["logistics_db"]
 
 def generate_large_graph():
