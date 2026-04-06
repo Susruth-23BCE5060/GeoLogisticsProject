@@ -1,0 +1,203 @@
+<!--
+
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dynamic City Graph Simulator</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; font-family: Arial, sans-serif; } 
+        #map { height: 100vh; background: #1a1a1a; } /* Dark mode map makes colors pop */
+        .panel { 
+            position: absolute; top: 15px; right: 15px; z-index: 1000; 
+            background: rgba(20, 20, 20, 0.9); color: white; padding: 20px; 
+            border-radius: 10px; border: 1px solid #333; box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            max-width: 300px;
+        }
+        .path-text { color: #4fc3f7; font-size: 0.9em; word-wrap: break-word; line-height: 1.5;}
+    </style>
+</head>
+<body>
+    <div class="panel">
+        <h2 style="margin-top:0; color: #4CAF50;">Live Network Matrix</h2>
+        <p><b>Ambulance Dijkstra Path:</b></p>
+        <p id="path-text" class="path-text">Calculating best route...</p>
+    </div>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map').setView([13.03, 80.23], 13);
+        
+        // Dark theme map so glowing traffic stands out
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+
+        let nodesData = {};
+        let edgesLayer = L.layerGroup().addTo(map);
+        let carsLayer = L.layerGroup().addTo(map);
+        let activePathLayer = L.layerGroup().addTo(map);
+        let ambMarker = null;
+        let carMarkers = {};
+
+        const ambIcon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/1013/1013344.png', iconSize: [40, 40] });
+
+        async function tick() {
+            const [nodes, edges, cars, ambList] = await Promise.all([
+                fetch('http://127.0.0.1:5000/api/nodes').then(r => r.json()),
+                fetch('http://127.0.0.1:5000/api/edges').then(r => r.json()),
+                fetch('http://127.0.0.1:5000/api/vehicles').then(r => r.json()),
+                fetch('http://127.0.0.1:5000/api/ambulance').then(r => r.json())
+            ]);
+
+            nodes.forEach(n => nodesData[n.node_id] = [n.coords[1], n.coords[0]]);
+            
+            // 1. Draw Streets (Color changes based on traffic!)
+            edgesLayer.clearLayers();
+            edges.forEach(e => {
+                const latlngs = [nodesData[e.u], nodesData[e.v]];
+                // If more than 12 cars on a street, it turns bright red
+                const isJammed = e.live_traffic > 12; 
+                L.polyline(latlngs, {
+                    color: isJammed ? '#ff1744' : '#424242', 
+                    weight: isJammed ? 6 : 3,
+                    opacity: 0.8
+                }).addTo(edgesLayer);
+            });
+
+            // 2. Draw Moving Cars (Smoothly updating positions)
+            cars.forEach(c => {
+                const pos = [c.location.coordinates[1], c.location.coordinates[0]];
+                if(carMarkers[c._id]) {
+                    carMarkers[c._id].setLatLng(pos);
+                } else {
+                    carMarkers[c._id] = L.circleMarker(pos, {radius: 3, color: '#ffb300', fillColor: '#ffca28', fillOpacity: 1, weight: 1}).addTo(carsLayer);
+                }
+            });
+
+            // 3. Draw Ambulance and Dijkstra Blue Line
+            const amb = ambList[0];
+            if(amb && amb.calculated_path.length > 0) {
+                document.getElementById('path-text').innerText = amb.calculated_path.join(' ➔ ');
+                
+                activePathLayer.clearLayers();
+                const pathCoords = amb.calculated_path.map(n_id => nodesData[n_id]);
+                L.polyline(pathCoords, {color: '#00b0ff', weight: 8, opacity: 0.9}).addTo(activePathLayer);
+
+                const ambPos = [amb.location.coordinates[1], amb.location.coordinates[0]];
+                if(!ambMarker) ambMarker = L.marker(ambPos, {icon: ambIcon, zIndexOffset: 1000}).addTo(map);
+                else ambMarker.setLatLng(ambPos);
+            }
+        }
+
+        // Run tick extremely fast (every 400ms) for game-like rendering
+        setInterval(tick, 400); 
+    </script>
+</body>
+</html>-->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>10x10 Optimal Routing Engine</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; font-family: Arial, sans-serif; } 
+        #map { height: 100vh; background: #0b0f19; } 
+        .panel { 
+            position: absolute; top: 15px; right: 15px; z-index: 1000; 
+            background: rgba(15, 20, 30, 0.95); color: #fff; padding: 15px; 
+            border-radius: 8px; border: 1px solid #333; box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+            width: 320px;
+        }
+        .stats { font-size: 0.85em; color: #8ab4f8; margin-bottom: 10px; }
+        .path-text { color: #00e676; font-size: 0.8em; word-wrap: break-word; line-height: 1.4; max-height: 150px; overflow-y: auto;}
+    </style>
+</head>
+<body>
+    <div class="panel">
+        <h2 style="margin-top:0; color: #f28b82;">SQL Network Brain</h2>
+        <div class="stats"><b>Nodes:</b> 100 | <b>Edges:</b> 180 | <b>Vehicles:</b> 700</div>
+        <p style="margin: 5px 0; border-bottom: 1px solid #444; padding-bottom: 5px;"><b>Live Dijkstra Matrix:</b></p>
+        <div id="path-text" class="path-text">Calculating optimal trajectory...</div>
+    </div>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map', {preferCanvas: true}).setView([13.025, 80.225], 14);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+
+        let edgesLayer = L.layerGroup().addTo(map);
+        let carsLayer = L.layerGroup().addTo(map);
+        let activePathLayer = L.layerGroup().addTo(map);
+        let ambMarker = null;
+        let carMarkers = {};
+        let nodesData = {};
+
+        async function fetchState() {
+            try {
+                const [nodes, edges, cars, ambList] = await Promise.all([
+                    fetch('http://127.0.0.1:5000/api/nodes').then(r => r.json()),
+                    fetch('http://127.0.0.1:5000/api/edges').then(r => r.json()),
+                    fetch('http://127.0.0.1:5000/api/vehicles').then(r => r.json()),
+                    fetch('http://127.0.0.1:5000/api/ambulance').then(r => r.json())
+                ]);
+
+                nodes.forEach(n => nodesData[n.node_id] = [n.lat, n.lng]);
+
+                // Draw Streets
+                edgesLayer.clearLayers();
+                edges.forEach(e => {
+                    const latlngs = [[e.u_lat, e.u_lng], [e.v_lat, e.v_lng]];
+                    const isJammed = e.live_traffic > 10;
+                    L.polyline(latlngs, {
+                        color: isJammed ? '#ff1744' : '#2d3748', 
+                        weight: isJammed ? 3.5 : 1.5,
+                        opacity: isJammed ? 1 : 0.6
+                    }).addTo(edgesLayer);
+                });
+
+                // Draw Cars
+                cars.forEach(c => {
+                    const pos = [c.lat, c.lng];
+                    if(carMarkers[c.vehicle_id]) {
+                        carMarkers[c.vehicle_id].setLatLng(pos);
+                    } else {
+                        carMarkers[c.vehicle_id] = L.circleMarker(pos, {radius: 2, color: '#fbbc04', fillColor: '#fbbc04', fillOpacity: 0.8, weight: 0}).addTo(carsLayer);
+                    }
+                });
+
+                // Draw Ambulance
+                const amb = ambList[0];
+                if(amb && amb.calculated_path.length > 0) {
+                    document.getElementById('path-text').innerText = amb.calculated_path.join(' ➔ ');
+                    
+                    activePathLayer.clearLayers();
+                    const pathCoords = amb.calculated_path.map(n_id => nodesData[n_id]);
+                    L.polyline(pathCoords, {color: '#00e676', weight: 6, opacity: 0.9}).addTo(activePathLayer);
+
+                    // HUGE RED DOT WITH WHITE BORDER
+                    const ambPos = [amb.lat, amb.lng];
+                    if(!ambMarker) {
+                        ambMarker = L.circleMarker(ambPos, {
+                            radius: 8, 
+                            color: '#ffffff', // White border
+                            fillColor: '#ff0000', // Solid Red
+                            fillOpacity: 1, 
+                            weight: 2,
+                            pane: 'markerPane' // Ensures it renders above everything else
+                        }).addTo(map);
+                    } else {
+                        ambMarker.setLatLng(ambPos);
+                    }
+                }
+            } catch (err) {
+                console.error("Waiting for backend API to spin up...", err);
+            }
+        }
+
+        setInterval(fetchState, 400); 
+    </script>
+</body>
+</html>
